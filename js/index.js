@@ -33,12 +33,18 @@ function processOp (target) {
     if (value === '-') {
         if (display.textContent !== '0') {
             saveToArr(value, currNum);
+            if (numArr.length === 2) {
+                processEq();
+            }
         } else {
             currNum += value;
         }
         display.textContent = (display.textContent == '0') ? value : display.textContent + value;
     } else {
         saveToArr(value, currNum);
+        if (numArr.length === 2) {
+            processEq();
+        }
         display.textContent += value;
     }
     console.log(currNum, numArr, operators);
@@ -54,8 +60,9 @@ function processEq () {
 
     numArr.length = 0;
     operators.shift();
-    currNum = `${operate(aNum, bNum, op)}`;
-    display.textContent = currNum;
+    numArr.push(`${operate(aNum, bNum, op)}`);
+    currNum = '';
+    display.textContent = numArr[0];
     console.log(numArr);
 }
 
@@ -82,6 +89,9 @@ function divide(a, b) {
 }
 
 function operate(a, b, operator) {
+    if ([a, b, operator].includes(undefined)) {
+        return currNum;
+    }
     switch (operator) {
         case '+':
             return add(a, b);
