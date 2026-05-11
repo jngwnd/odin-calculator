@@ -1,242 +1,250 @@
-const mathjs = window.math;
+const MATHJS = window.math;
 
 const display = document.querySelector('#display');
 const buttons = document.querySelector('#buttons');
 const clear = document.querySelector('#clear');
-const digit = /\d/;
-const operator = /[+\-*/]/;
 
+const DIGIT = /\d/;
+const OPERATOR = /[+\-*/]/;
 
-let currNum = '0';
-let prevBtn = '';
+const getDisplay = () => display.dataset.value;
+const setDisplay = (val) => {
+    display.dataset.value = val;
+    display.textContent = val;
+}
+const lastChar = () => display.dataset.value.at(-1);
 
-console.log(`curr: ${currNum}`, `dis: ${display.dataset.value}`, `prev: ${prevBtn}`);
+let state = {currNum: '0', prevBtn: ''};
 
 buttons.addEventListener('click', (e) => {
-    const target = e.target;
-    const value = target.dataset.value;
+    const value = e.target.dataset.value;
+    const handlers = {
+        '=': processEq,
+        '%': processMod,
+        '.': processDec,
+        'delete': processDelete,
+        'clear': processClear,
+        'sign': processSign,
+    }
+    
+    if (!e.target.matches('button')) return;
 
-    if (digit.test(value)) processNum(target);
-    if (operator.test(value)) processOp(target);
-    if (value === '=') processEq(target);
-    if (value === '%') processMod(target);
-    if (value === '.') processDec(target);
-    if (value === 'delete') processDelete();
-    if (value === 'clear') processClear();
-    if (value === 'sign') processSign();
-
-    display.textContent = display.dataset.value;
-    console.log(`curr: ${currNum}`, `dis: ${display.dataset.value}`, `prev: ${prevBtn}`);
+    if (DIGIT.test(value)) {
+        processNum(value);
+    } else if (OPERATOR.test(value)) {
+        processOp(value);
+    } else {
+        handlers[value]?.(value);
+    }
 })
 
+function processNum(value) {
 
-/* 
-STEP 1: Concatenate target value to currNum
-STEP 2: Set display value to target value if display value equals 0, otherwise appends target value to display value
+    if (lastChar() === '%') state.currNum = '0';
+    if (lastChar() === ')') setDisplay(getDisplay() + '*');
+    if (state.prevBtn === '=') {
+        setDisplay('');
+        state.currNum = '0';
+    }
+    
+    state.currNum = (state.currNum === '0') ? value : (state.currNum + value);
+    setDisplay((getDisplay() === '0') ? value : getDisplay() + value);
 
-* needs to replace 0 with positive int if 0 is the currNum after operator
-*/
-function processNum(target) {
-    const value = target.dataset.value;
-
-    if (prevBtn === '=') {
-        display.dataset.value = '';
-        currNum = '0';
-    }
-    if (display.dataset.value.at(-1) === '%') {
-        currNum = '0';
-    }
-    if (display.dataset.value.at(-1) === ')') {
-        display.dataset.value += '*';
-    }
-    currNum = (currNum === '0') ? value : (currNum + value);
-    display.dataset.value = (display.dataset.value === '0') ? value : (display.dataset.value + value);
-    prevBtn = value;
+    state.prevBtn = value;
     clear.textContent = 'C';
 }
 
-function processOp(target) {
-    const value = target.dataset.value;
+function processOp(value) {
     const addSub = /[+\-]/;
     
     switch (value) {
         case '-':
-            currNum = (currNum === '0' && display.dataset.value === '0') ? value : '';
+            state.currNum = (state.currNum === '0' && getDisplay() === '0') ? value : '';
             
-            if (addSub.test(display.dataset.value.at(-1))) {
-                display.dataset.value = display.dataset.value.slice(0, -1) + value;
-            } else if (display.dataset.value === '0') {
-                display.dataset.value = value;
+            if (addSub.test(lastChar())) {
+                setDisplay(getDisplay().slice(0, -1) + value);
+            } else if (getDisplay() === '0') {
+                setDisplay(value);
             } else {
-                display.dataset.value += value;
+                setDisplay(getDisplay() + value);
             }
             break;
 
         case '+':
         case '*':
         case '/':
-            if (display.dataset.value.at(-1) === '(') {
-                return;
-            }
+            if (lastChar() === '(') return;
             
-            if (display.dataset.value.at(-1) === '-' && operator.test(display.dataset.value.at(-2))) {
-                display.dataset.value = display.dataset.value.slice(0, -2) + value;
-            } else if (operator.test(display.dataset.value.at(-1))) {
-                display.dataset.value = display.dataset.value.slice(0, -1) + value;
+            if (lastChar() === '-' && OPERATOR.test(getDisplay().at(-2))) {
+                setDisplay(getDisplay().slice(0, -2) + value);
+            } else if (OPERATOR.test(lastChar())) {
+                setDisplay(getDisplay().slice(0, -1) + value);
             } else {
-                display.dataset.value += value;
+                setDisplay(getDisplay() + value);
             }
-            currNum = '';
-            break;
 
+            state.currNum = '';
+            break;
     }
-    prevBtn = value;
+
+    state.prevBtn = value;
     clear.textContent = 'C';
 }
 
-function processEq(target) {
-    if (operator.test(display.dataset.value.at(-1)) || display.dataset.value.at(-1) === '(') {
-        return;
-    }
-    const result = mathjs.evaluate(display.dataset.value);
-    currNum = parseFloat(result.toFixed(10)).toString();
-    display.dataset.value = (currNum === 'Infinity') ? "Undefined" : currNum;
-    prevBtn = target.dataset.value;
+function processEq(value) {
+    if (OPERATOR.test(lastChar()) || lastChar() === '(') return;
+    
+    const result = MATHJS.evaluate(getDisplay());
+    state.currNum = parseFloat(result.toFixed(10)).toString();
+    setDisplay((state.currNum === "Infinity") ? "Undefined" : state.currNum);
+    state.prevBtn = value;
     clear.textContent = 'AC';
 }
 
-function processMod(target) {
-    const value = target.dataset.value;
+function processMod(value) {
+    if (lastChar() === '(') return;
 
-    if (display.dataset.value.at(-1) === '(') {
-        return;
+    const getOpSegment = () => {
+        const opIndex = lastRegIndex(getDisplay(), OPERATOR);
+        return getDisplay().slice(opIndex + 1, -1) + '%';
     }
 
-    if (operator.test(display.dataset.value.at(-1))) {
-        if (display.dataset.value.at(-2) === '%') {
-            display.dataset.value = display.dataset.value.slice(0, -1);
-            const opIndex = lastRegIndex(display.dataset.value, operator);
-            currNum = display.dataset.value.slice(opIndex + 1, -1) + '%';
-            return;
-        }
-        display.dataset.value = display.dataset.value.slice(0, -1) + value;
-        const opIndex = lastRegIndex(display.dataset.value, operator);
-        currNum = display.dataset.value.slice(opIndex + 1, -1) + '%';
+    if (OPERATOR.test(lastChar())) {
 
-    } else if (display.dataset.value.at(-1) === '%') {
-        if (currNum === '') {
-            const opIndex = lastRegIndex(display.dataset.value, operator);
-            currNum = display.dataset.value.slice(opIndex + 1, -1) + '%';
+        setDisplay(getDisplay().slice(0, -1) + ((getDisplay().at(-2) === '%') ? '' : value));
+        state.currNum = getOpSegment();
+
+    } else if (lastChar() === '%') {
+        if (state.currNum === '') {
+            state.currNum = getOpSegment();
         }
-        currNum = `(${currNum})%`;
-        display.dataset.value = display.dataset.value.slice(0, -(currNum.length - 3)) + currNum;
+        state.currNum = `(${state.currNum})%`;
+        setDisplay(getDisplay().slice(0, -(state.currNum.length - 3)) + state.currNum);
 
     } else {
-        currNum += '%';
-        display.dataset.value += '%';
+        state.currNum += '%';
+        setDisplay(getDisplay() + '%');
     }
-    prevBtn = value;
+
+    state.prevBtn = value;
     clear.textContent = 'C';
 }
 
-function processDec(target) {
-    const value = target.dataset.value;
+function processDec(value) {
 
-    if (currNum.includes('.')) {
-        return;
-    } else if (currNum === '') {
-        currNum = '0.';
-        display.dataset.value += currNum;
+    if (state.currNum.includes('.')) return;
+    
+    if (state.currNum === '') {
+        state.currNum = '0.';
+        setDisplay(getDisplay() + state.currNum);
     } else {
-        currNum += '.';
-        display.dataset.value += value;
+        state.currNum += '.';
+        setDisplay(getDisplay() + value);
     }
-    prevBtn = value;
+
+    state.prevBtn = value;
     clear.textContent = 'C';
 }
 
 function processSign() {
+    if (state.currNum === '' || state.currNum === '0' || lastChar() === '(') return;
+
     let opIndex;
+    const isModulo = (lastChar() === '%');
+    const regex = isModulo ? OPERATOR : /[+\-*/%]/;
+    const PLUS_MINUS = new Set(['+', '-']);
+    const OTHER_OP = new Set(['*', '/', '%']);
+    const getOperator = () => getDisplay().at(opIndex);
 
-    if (currNum === '' ||
-        currNum === '0' ||
-        display.dataset.value.at(-1) === '(') {
-        return;
+    if (/^\d+\.?\d*%?$/.test(state.currNum)) {
+        opIndex = lastRegIndex(getDisplay(), regex);
+        
+        if (PLUS_MINUS.has(getOperator())) {
+            setDisplay(getDisplay().slice(0, opIndex) +
+                       ((getOperator() === '+') ? '-' : (getOperator() === '-') ? '+' : '') +
+                       state.currNum);
+            return;
+        } else {
+            state.currNum = `(-${state.currNum})`;
+        }
+
+    } else if (/^\(-\d+\.?\d*%?\)$/.test(state.currNum)) {
+        opIndex = lastRegIndex(getDisplay(), regex, 2);
+        state.currNum = state.currNum.slice(2, -1);
+
+    } else if (/^-\d+\.?\d*%?$/.test(state.currNum)) {
+        opIndex = lastRegIndex(getDisplay(), regex, 2);
+        state.currNum = state.currNum.slice(-(state.currNum.length - 1));                                                                
     }
 
-    if (/^\d+\.?\d*%?$/.test(currNum)) {
-        opIndex = (display.dataset.value.at(-1) === '%') ? lastRegIndex(display.dataset.value, operator) :
-                                                           lastRegIndex(display.dataset.value, /[+\-*/%]/);
-        currNum = `(-${currNum})`;
-
-    } else if (/^\(-\d+\.?\d*%?\)$/.test(currNum)) {
-        opIndex = (display.dataset.value.at(-1) === '%') ? lastRegIndex(display.dataset.value, operator, 2) :
-                                                           lastRegIndex(display.dataset.value, /[+\-*/%]/, 2);
-        currNum = currNum.slice(2, -1);
-    } else if (/^-\d+\.?\d*%?$/.test(currNum)) {
-        opIndex = (display.dataset.value.at(-1) === '%') ? lastRegIndex(display.dataset.value, operator, 2) :
-                                                           lastRegIndex(display.dataset.value, /[+\-*/%]/, 2);
-        currNum = currNum.slice(-(currNum.length - 1));                                                                
-    }
-
-    display.dataset.value = display.dataset.value.slice(0, opIndex + 1) + currNum;
+    setDisplay(getDisplay().slice(0, opIndex + 1) + state.currNum);
 }
 
 function processDelete() {
-    const digDec = /[\d$.]/;
+    const DIG_DEC = /[\d$.]/;
 
-    if (display.dataset.value === "Undefined") {
-        return;
-    }
+    if (getDisplay() === "Undefined") return;
     
-    if (display.dataset.value.at(-1) === ')') {
-        const parenIndex = lastRegIndex(display.dataset.value, /\(/);
-        if (display.dataset.value.at(parenIndex - 1) === '+' && display.dataset.value.at(parenIndex + 1) === '-') {
-            display.dataset.value = display.dataset.value.slice(0, parenIndex - 1) +
-                                    display.dataset.value.slice((display.dataset.value.length - (parenIndex + 1)), -1);
+    if (lastChar() === ')') {
+        const parenIndex = lastRegIndex(getDisplay(), /\(/);
+        const getOperator = () => getDisplay().at(parenIndex - 1);
+
+        if (getDisplay().at(parenIndex + 1) === '-') {
+            setDisplay(getDisplay().slice(0, parenIndex - 1) +
+                       ((getOperator() === '+') ? '-' : (getOperator() === '-') ? '+' : '') +
+                       getDisplay().slice((getDisplay().length - parenIndex), -1));
         } else {
-            display.dataset.value = display.dataset.value.slice(0, parenIndex) +
-                                    display.dataset.value.slice((display.dataset.value.length - (parenIndex + 1)), -1);
+            setDisplay(getDisplay().slice(0, parenIndex) +
+                       getDisplay().slice(parenIndex + 1, -1));
         }
+
     } else {
-        display.dataset.value = display.dataset.value.slice(0, -1);
-    }
-    if (display.dataset.value === '') {
-        currNum = '0';
-        display.dataset.value = '0';
-    }
-    if (operator.test(display.dataset.value)) {
-        currNum = '';
-    } else if (digDec.test(display.dataset.value.at(-1))) {
-        const opIndex = lastRegIndex(display.dataset.value, /[+\-*/%]/);
-        currNum = display.dataset.value.slice(-(display.dataset.value.length - opIndex));
-    } else if (currNum) {
-        currNum.slice(0, -1);
+        setDisplay(getDisplay().slice(0, -1));
     }
 
+    if (getDisplay() === '') {
+        state.currNum = '0';
+        setDisplay('0');
+    } else if (OPERATOR.test(lastChar())) {
+        state.currNum = '';
+    } else if (DIG_DEC.test(lastChar())) {
+        const opIndex = lastRegIndex(getDisplay(), /[+\-*/%]/);
+        state.currNum = getDisplay().slice(-(getDisplay().length - (opIndex + 1)));
+    } else if (state.currNum) {
+        state.currNum = state.currNum.slice(0, -1);
+    }
 }
 
 function processClear() {
     const clearContent = clear.textContent;
     
     if (clearContent === 'AC') {
-        currNum = '0';
-        display.dataset.value = '0';
+        state.currNum = '0';
+        setDisplay('0');
+        
     } else if (clearContent === 'C') {
-        const opIndex = lastRegIndex(display.dataset.value, /[+\-*/%]/);
-
-        currNum = '';
-        display.dataset.value = display.dataset.value.slice(0, opIndex + 1);
-        if (display.dataset.value === '') {
-            currNum = '0';
-            display.dataset.value = '0';
+        const opIndex = lastRegIndex(getDisplay(), /[+\-*/%]/);
+        const SIGNED_NUM = /^\(-\d+\.?\d*%?\)/;
+        
+        if (SIGNED_NUM.test(state.currNum)) {
+            setDisplay(getDisplay().slice(0, -(state.currNum.length)));
+        } else {
+            setDisplay((getDisplay() === state.currNum) ? '0' : getDisplay().slice(0, opIndex + 1));
         }
-        clear.textContent = 'AC';        
+        
+        state.currNum = '';
+
+        if (getDisplay() === '') {
+            state.currNum = '0';
+            setDisplay('0');
+        }
+
+        clear.textContent = 'AC';
     }
 }
 
 function lastRegIndex(str, regex, negIndex = 1) {
-    const gRegex = new RegExp(regex.source, regex.flags.includes('g') ? regex.flags : regex.flags + 'g');
+    const gRegex = new RegExp(regex.source, 'g');
     const matches = [...str.matchAll(gRegex)];
     return (matches.length >= negIndex) ? matches.at(-negIndex).index : -1;
 }
